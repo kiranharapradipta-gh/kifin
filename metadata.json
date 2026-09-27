@@ -1,0 +1,6 @@
+{
+  "name": "KIFIN",
+  "description": "Kiran Finance - Aplikasi pencatatan keuangan pribadi praktis dan intuitif dengan grafik, proteksi PIN, dan ekspor multi-format.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

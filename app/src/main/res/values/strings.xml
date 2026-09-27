@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">KIFIN</string>
+    <string name="app_subtitle">Kiran Finance</string>
+    <string name="tab_home">Utama</string>
+    <string name="tab_history">Riwayat</string>
+    <string name="tab_settings">Pengaturan</string>
+</resources>
