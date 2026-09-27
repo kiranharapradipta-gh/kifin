@@ -134,39 +134,14 @@ fun KifinMainApp(viewModel: KifinViewModel) {
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val isPinEnabled by viewModel.preferences.isPinEnabled.collectAsStateWithLifecycle()
     val isPinConfigured = viewModel.preferences.isPinConfigured()
+    val isGoogleLoggedIn by viewModel.isGoogleLoggedIn.collectAsStateWithLifecycle()
+    val googleAccountName by viewModel.googleAccountName.collectAsStateWithLifecycle()
+    val googleAccountEmail by viewModel.googleAccountEmail.collectAsStateWithLifecycle()
+    val isAutoBackupEnabled by viewModel.isAutoBackupEnabled.collectAsStateWithLifecycle()
+    val lastBackupTime by viewModel.lastBackupTime.collectAsStateWithLifecycle()
 
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.ic_kifin_logo),
-                            contentDescription = "Logo KIFIN",
-                            modifier = Modifier
-                                .size(26.dp)
-                                .clip(RoundedCornerShape(7.dp))
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "KIFIN",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 2.sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                ),
-                modifier = Modifier.testTag("app_top_bar")
-            )
-        },
         bottomBar = {
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.surface,
@@ -296,10 +271,21 @@ fun KifinMainApp(viewModel: KifinViewModel) {
                             themeMode = themeMode,
                             isPinEnabled = isPinEnabled,
                             isPinConfigured = isPinConfigured,
+                            isGoogleLoggedIn = isGoogleLoggedIn,
+                            googleAccountName = googleAccountName,
+                            googleAccountEmail = googleAccountEmail,
+                            isAutoBackupEnabled = isAutoBackupEnabled,
+                            lastBackupTime = lastBackupTime,
                             onThemeModeChange = { mode -> viewModel.setThemeMode(mode) },
                             onPinToggle = { enabled -> viewModel.preferences.setPinEnabled(enabled) },
                             onSetNewPin = { pin -> viewModel.setPin(pin) },
                             onLockApp = { viewModel.lockApp() },
+                            onGetGoogleSignInIntent = { viewModel.getGoogleSignInIntent() },
+                            onLoginGoogle = { name, email -> viewModel.loginGoogle(name, email) },
+                            onLogoutGoogle = { viewModel.logoutGoogle() },
+                            onAutoBackupToggle = { enabled -> viewModel.setAutoBackup(enabled) },
+                            onBackupToDrive = { viewModel.backupToGoogleDrive() },
+                            onRestoreFromDrive = { viewModel.restoreFromGoogleDrive() },
                             onExport = { format -> viewModel.exportTransactions(format) },
                             onImportUri = { uri -> viewModel.importData(uri) }
                         )

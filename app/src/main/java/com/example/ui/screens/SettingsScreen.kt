@@ -24,22 +24,27 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.ExitToApp
-import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.PictureAsPdf
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -48,6 +53,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -67,9 +73,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.ExportHelper
+import com.example.data.GoogleDriveBackupManager
 import com.example.data.ImportHelper
+import com.example.ui.components.GoogleLoginDialog
 import com.example.ui.components.SetPinDialog
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.common.api.ApiException
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 val PlayfairFontFamily = FontFamily(
     Font(R.font.playfair_display, FontWeight.Bold)
@@ -80,10 +93,21 @@ fun SettingsScreen(
     themeMode: String,
     isPinEnabled: Boolean,
     isPinConfigured: Boolean,
+    isGoogleLoggedIn: Boolean,
+    googleAccountName: String,
+    googleAccountEmail: String,
+    isAutoBackupEnabled: Boolean,
+    lastBackupTime: Long,
     onThemeModeChange: (String) -> Unit,
     onPinToggle: (Boolean) -> Unit,
     onSetNewPin: (String) -> Unit,
     onLockApp: () -> Unit,
+    onGetGoogleSignInIntent: () -> Intent,
+    onLoginGoogle: (String, String) -> Unit,
+    onLogoutGoogle: () -> Unit,
+    onAutoBackupToggle: (Boolean) -> Unit,
+    onBackupToDrive: suspend () -> GoogleDriveBackupManager.DriveSyncResult,
+    onRestoreFromDrive: suspend () -> GoogleDriveBackupManager.DriveSyncResult,
     onExport: (ExportHelper.ExportFormat) -> Unit,
     onImportUri: suspend (Uri) -> ImportHelper.ImportResult,
     modifier: Modifier = Modifier
@@ -91,6 +115,31 @@ fun SettingsScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var showSetPinDialog by remember { mutableStateOf(false) }
+    var showGoogleLoginDialog by remember { mutableStateOf(false) }
+    var isDriveSyncing by remember { mutableStateOf(false) }
+
+    // Real Google Play Services Sign-In Launcher
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        try {
+            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+            val account = task.getResult(ApiException::class.java)
+            if (account != null) {
+                val email = account.email ?: ""
+                val name = account.displayName ?: email.substringBefore("@").ifBlank { "Pengguna Google" }
+                if (email.isNotBlank()) {
+                    onLoginGoogle(name, email)
+                    Toast.makeText(context, "Berhasil masuk sebagai $email", Toast.LENGTH_SHORT).show()
+                    return@rememberLauncherForActivityResult
+                }
+            }
+            showGoogleLoginDialog = true
+        } catch (_: Exception) {
+            // When play services is absent on emulator or user cancels, show dialog without hardcoded data
+            showGoogleLoginDialog = true
+        }
+    }
 
     // File picker for import
     val importFileLauncher = rememberLauncherForActivityResult(
@@ -122,11 +171,283 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
-                    text = "Kelola ekspor, impor data, tema tampilan, dan keamanan PIN aplikasi",
+                    text = "Kelola akun Google, cadangan Google Drive, tema, dan PIN",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            // Akun Google & Cadangan Cloud (Google Drive)
+            item {
+                Text(
+                    text = "Akun Google & Cadangan Google Drive",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("google_drive_card"),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        if (!isGoogleLoggedIn) {
+                            // Belum Login Akun Google
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AccountCircle,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = "Hubungkan Akun Google",
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Aktifkan auto backup & restore ke Google Drive",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            Button(
+                                onClick = {
+                                    try {
+                                        googleSignInLauncher.launch(onGetGoogleSignInIntent())
+                                    } catch (_: Exception) {
+                                        showGoogleLoginDialog = true
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .testTag("login_google_button"),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary
+                                )
+                            ) {
+                                Icon(imageVector = Icons.Default.CloudDone, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Login dengan Akun Google",
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        } else {
+                            // Sudah Login Akun Google
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .background(MaterialTheme.colorScheme.primary, CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = googleAccountName.take(1).uppercase(),
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 20.sp
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column {
+                                        Text(
+                                            text = googleAccountName,
+                                            fontWeight = FontWeight.Bold,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = googleAccountEmail,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Color(0xFFD1FAE5)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = null,
+                                            tint = Color(0xFF10B981),
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Terhubung",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF047857)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(14.dp))
+                            HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            // Switch Auto Backup
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Auto Backup ke Google Drive",
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Cadangkan otomatis setiap ada perubahan transaksi",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = isAutoBackupEnabled,
+                                    onCheckedChange = { onAutoBackupToggle(it) },
+                                    modifier = Modifier.testTag("auto_backup_switch")
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Waktu Terakhir Backup
+                            val lastBackupStr = if (lastBackupTime > 0L) {
+                                val sdf = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale("id", "ID"))
+                                "Terakhir dicadangkan: " + sdf.format(Date(lastBackupTime))
+                            } else {
+                                "Belum pernah dicadangkan"
+                            }
+                            Text(
+                                text = lastBackupStr,
+                                fontSize = 11.5.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                            )
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // Tombol Cadangkan Sekarang & Pulihkan dari Drive
+                            if (isDriveSyncing) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text("Memproses sinkronisasi Google Drive...", fontSize = 12.sp)
+                                }
+                            } else {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    // Backup Button
+                                    Button(
+                                        onClick = {
+                                            isDriveSyncing = true
+                                            coroutineScope.launch {
+                                                val res = onBackupToDrive()
+                                                isDriveSyncing = false
+                                                Toast.makeText(context, res.message, Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(44.dp)
+                                            .testTag("backup_drive_now_button"),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) {
+                                        Icon(imageVector = Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Cadangkan", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                                    }
+
+                                    // Restore Button
+                                    OutlinedButton(
+                                        onClick = {
+                                            isDriveSyncing = true
+                                            coroutineScope.launch {
+                                                val res = onRestoreFromDrive()
+                                                isDriveSyncing = false
+                                                Toast.makeText(context, res.message, Toast.LENGTH_LONG).show()
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(44.dp)
+                                            .testTag("restore_drive_now_button"),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) {
+                                        Icon(imageVector = Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Pulihkan", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                // Logout Google button
+                                TextButton(
+                                    onClick = onLogoutGoogle,
+                                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                                ) {
+                                    Icon(imageVector = Icons.Default.Logout, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Keluar dari Akun Google", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(20.dp))
             }
 
             // Ekspor Data Transaksi (PDF, CSV, EXCEL, JSON)
@@ -624,6 +945,18 @@ fun SettingsScreen(
                     Toast.makeText(context, "PIN berhasil disimpan dan diaktifkan", Toast.LENGTH_SHORT).show()
                 },
                 onDismiss = { showSetPinDialog = false }
+            )
+        }
+
+        // Google Sign In Dialog
+        if (showGoogleLoginDialog) {
+            GoogleLoginDialog(
+                onConfirm = { name, email ->
+                    onLoginGoogle(name, email)
+                    showGoogleLoginDialog = false
+                    Toast.makeText(context, "Berhasil masuk sebagai $name ($email)", Toast.LENGTH_SHORT).show()
+                },
+                onDismiss = { showGoogleLoginDialog = false }
             )
         }
     }

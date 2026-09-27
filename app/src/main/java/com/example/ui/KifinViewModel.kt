@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.AppDatabase
 import com.example.data.AppPreferences
 import com.example.data.ExportHelper
+import com.example.data.GoogleDriveBackupManager
 import com.example.data.ImportHelper
 import com.example.data.TransactionEntity
 import com.example.data.TransactionRepository
@@ -57,6 +58,14 @@ class KifinViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getInstance(application)
     private val repository = TransactionRepository(database.transactionDao())
     val preferences = AppPreferences(application)
+    val driveManager = GoogleDriveBackupManager(application)
+
+    // Google Account & Drive Backup states
+    val isGoogleLoggedIn: StateFlow<Boolean> = driveManager.isLoggedIn
+    val googleAccountName: StateFlow<String> = driveManager.accountName
+    val googleAccountEmail: StateFlow<String> = driveManager.accountEmail
+    val isAutoBackupEnabled: StateFlow<Boolean> = driveManager.isAutoBackupEnabled
+    val lastBackupTime: StateFlow<Long> = driveManager.lastBackupTime
 
     // Current navigation tab
     private val _currentTab = MutableStateFlow(AppTab.HOME)
@@ -437,6 +446,7 @@ class KifinViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
             closeAddEditSheet()
+            triggerAutoBackup()
         }
     }
 
@@ -454,6 +464,7 @@ class KifinViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.delete(tx)
             _transactionToDelete.value = null
+            triggerAutoBackup()
         }
     }
 
@@ -526,6 +537,52 @@ class KifinViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun importData(uri: Uri): ImportHelper.ImportResult {
-        return ImportHelper.importFromUri(getApplication(), uri, repository)
+        val result = ImportHelper.importFromUri(getApplication(), uri, repository)
+        if (result.success) {
+            triggerAutoBackup()
+        }
+        return result
+    }
+
+    // --- Google Account & Google Drive Auto Backup & Restore ---
+    fun getGoogleSignInIntent(): android.content.Intent {
+        return driveManager.getSignInIntent()
+    }
+
+    fun hasDrivePermission(): Boolean {
+        return driveManager.hasDrivePermission()
+    }
+
+    fun loginGoogle(name: String, email: String, photo: String? = null) {
+        driveManager.setGoogleAccount(name, email, photo)
+    }
+
+    fun logoutGoogle() {
+        driveManager.signOut()
+    }
+
+    fun setAutoBackup(enabled: Boolean) {
+        driveManager.setAutoBackup(enabled)
+        if (enabled) {
+            triggerAutoBackup()
+        }
+    }
+
+    suspend fun backupToGoogleDrive(): GoogleDriveBackupManager.DriveSyncResult {
+        val list = repository.getAllSnapshot()
+        return driveManager.backupToGoogleDrive(list)
+    }
+
+    suspend fun restoreFromGoogleDrive(): GoogleDriveBackupManager.DriveSyncResult {
+        return driveManager.restoreFromGoogleDrive(repository)
+    }
+
+    fun triggerAutoBackup() {
+        if (driveManager.isAutoBackupEnabled.value && driveManager.isLoggedIn.value) {
+            viewModelScope.launch {
+                val list = repository.getAllSnapshot()
+                driveManager.backupToGoogleDrive(list)
+            }
+        }
     }
 }

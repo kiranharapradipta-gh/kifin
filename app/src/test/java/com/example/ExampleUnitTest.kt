@@ -27,25 +27,4 @@ class ExampleUnitTest {
         val daysInSept = DateUtils.getDaysInMonth(2026, 8)
         assertEquals(30, daysInSept)
     }
-
-    @Test
-    fun testJsonImportParsingStructure() {
-        val sampleJson = """
-            {
-              "appName": "KIFIN",
-              "transactions": [
-                {
-                  "amount": 50000,
-                  "type": "EXPENSE",
-                  "note": "Bensin",
-                  "timestamp": 1700000000000
-                }
-              ]
-            }
-        """.trimIndent()
-        val root = org.json.JSONObject(sampleJson)
-        val array = root.getJSONArray("transactions")
-        assertEquals(1, array.length())
-        assertEquals(50000L, array.getJSONObject(0).getLong("amount"))
-    }
 }

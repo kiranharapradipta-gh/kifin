@@ -225,7 +225,7 @@ fun AddEditTransactionSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("transaction_note_input"),
-                    placeholder = { Text("Contoh: Kopi, Makan Siang, Gaji...") },
+                    placeholder = { Text("Catatan transaksi") },
                     leadingIcon = {
                         Icon(imageVector = Icons.Default.Edit, contentDescription = null)
                     },
