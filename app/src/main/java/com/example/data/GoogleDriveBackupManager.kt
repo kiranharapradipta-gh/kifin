@@ -181,6 +181,18 @@ class GoogleDriveBackupManager(private val context: Context) {
                 osw.flush()
                 osw.close()
 
+                // Also save an external copy for user accessibility
+                try {
+                    val externalDir = context.getExternalFilesDir(null)
+                    if (externalDir != null) {
+                        val publicBackup = File(externalDir, "KIFIN_GoogleDrive_Backup.json")
+                        val fos = FileOutputStream(publicBackup)
+                        fos.write(jsonContent.toByteArray(StandardCharsets.UTF_8))
+                        fos.flush()
+                        fos.close()
+                    }
+                } catch (_: Exception) {}
+
                 // Save to Preferences Cache
                 val now = System.currentTimeMillis()
                 prefs.edit()
@@ -209,12 +221,15 @@ class GoogleDriveBackupManager(private val context: Context) {
                     return@withContext DriveSyncResult(false, "Silakan login dengan akun Google terlebih dahulu")
                 }
 
-                // Look for backup in local drive folder or cache
+                // Look for backup in local drive folder, cache, or external backup
                 val driveDir = File(context.filesDir, "google_drive_backup")
                 val backupFile = File(driveDir, "kifin_drive_backup.json")
+                val externalFile = File(context.getExternalFilesDir(null), "KIFIN_GoogleDrive_Backup.json")
 
                 val jsonContent = if (backupFile.exists() && backupFile.length() > 0) {
                     backupFile.readText(StandardCharsets.UTF_8)
+                } else if (externalFile.exists() && externalFile.length() > 0) {
+                    externalFile.readText(StandardCharsets.UTF_8)
                 } else {
                     prefs.getString(KEY_BACKUP_CACHE, null)
                 }
@@ -232,7 +247,7 @@ class GoogleDriveBackupManager(private val context: Context) {
                     return@withContext DriveSyncResult(false, "Berkas cadangan kosong atau tidak memiliki data transaksi")
                 }
 
-                var restoredCount = 0
+                val listToInsert = ArrayList<TransactionEntity>(array.length())
                 for (i in 0 until array.length()) {
                     val item = array.getJSONObject(i)
                     val amount = item.optLong("amount", 0L)
@@ -241,7 +256,7 @@ class GoogleDriveBackupManager(private val context: Context) {
                     val timestamp = item.optLong("timestamp", System.currentTimeMillis())
 
                     if (amount > 0) {
-                        repository.insert(
+                        listToInsert.add(
                             TransactionEntity(
                                 amount = amount,
                                 type = type,
@@ -249,14 +264,17 @@ class GoogleDriveBackupManager(private val context: Context) {
                                 timestamp = timestamp
                             )
                         )
-                        restoredCount++
                     }
+                }
+
+                if (listToInsert.isNotEmpty()) {
+                    repository.insertAll(listToInsert)
                 }
 
                 DriveSyncResult(
                     success = true,
-                    message = "Berhasil memulihkan $restoredCount transaksi dari Google Drive",
-                    count = restoredCount
+                    message = "Berhasil memulihkan ${listToInsert.size} transaksi dari Google Drive",
+                    count = listToInsert.size
                 )
             } catch (e: Exception) {
                 e.printStackTrace()

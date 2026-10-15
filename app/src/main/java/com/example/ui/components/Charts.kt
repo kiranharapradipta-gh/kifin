@@ -180,6 +180,11 @@ fun MonthlyLineChart(
             val strokeGrid = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
             val n = points.size
 
+            val incomePath = remember { Path() }
+            val expensePath = remember { Path() }
+            val incomeFillPath = remember { Path() }
+            val expenseFillPath = remember { Path() }
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -235,11 +240,10 @@ fun MonthlyLineChart(
 
                     val stepX = if (n > 1) chartWidth / (n - 1) else chartWidth
 
-                    val incomePath = Path()
-                    val expensePath = Path()
-
-                    val incomeFillPath = Path()
-                    val expenseFillPath = Path()
+                    incomePath.reset()
+                    expensePath.reset()
+                    incomeFillPath.reset()
+                    expenseFillPath.reset()
 
                     val incomeCoords = mutableListOf<Offset>()
                     val expenseCoords = mutableListOf<Offset>()

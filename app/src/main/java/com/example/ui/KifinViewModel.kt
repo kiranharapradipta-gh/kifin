@@ -13,11 +13,14 @@ import com.example.data.TransactionEntity
 import com.example.data.TransactionRepository
 import com.example.data.TransactionType
 import com.example.util.DateUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
@@ -51,6 +54,12 @@ data class NoteGroupSummary(
     val count: Int,
     val percentage: Float,
     val transactions: List<TransactionEntity>
+)
+
+data class MonthlySummary(
+    val income: Long = 0L,
+    val expense: Long = 0L,
+    val chartPoints: List<DailyChartPoint> = emptyList()
 )
 
 class KifinViewModel(application: Application) : AndroidViewModel(application) {
@@ -101,49 +110,55 @@ class KifinViewModel(application: Application) : AndroidViewModel(application) {
     val distinctNotes: StateFlow<List<String>> = repository.distinctNotes
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // All-time balance (total income - total expense)
-    val allTimeBalance: StateFlow<Long> = allTransactions.combine(_selectedMonth) { list, _ ->
-        var income = 0L
-        var expense = 0L
-        list.forEach {
-            if (it.type == TransactionType.INCOME.name) income += it.amount
-            else expense += it.amount
+    // All-time balance computed in background
+    val allTimeBalance: StateFlow<Long> = allTransactions.map { list ->
+        var balance = 0L
+        for (it in list) {
+            if (it.type == TransactionType.INCOME.name) balance += it.amount
+            else balance -= it.amount
         }
-        income - expense
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
+        balance
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
 
-    // Monthly income for selected month
-    val selectedMonthIncome: StateFlow<Long> = combine(allTransactions, _selectedYear, _selectedMonth) { list, year, month ->
+    // Monthly summary & chart points calculated in a single fast O(N) pass off main thread
+    private val monthlySummary: StateFlow<MonthlySummary> = combine(allTransactions, _selectedYear, _selectedMonth) { list, year, month ->
         val start = DateUtils.getMonthStartMillis(year, month)
         val end = DateUtils.getMonthEndMillis(year, month)
-        list.filter { it.timestamp in start..end && it.type == TransactionType.INCOME.name }
-            .sumOf { it.amount }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
-
-    // Monthly expense for selected month
-    val selectedMonthExpense: StateFlow<Long> = combine(allTransactions, _selectedYear, _selectedMonth) { list, year, month ->
-        val start = DateUtils.getMonthStartMillis(year, month)
-        val end = DateUtils.getMonthEndMillis(year, month)
-        list.filter { it.timestamp in start..end && it.type == TransactionType.EXPENSE.name }
-            .sumOf { it.amount }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
-
-    // Daily chart points for selected month
-    val monthlyChartPoints: StateFlow<List<DailyChartPoint>> = combine(allTransactions, _selectedYear, _selectedMonth) { list, year, month ->
         val daysInMonth = DateUtils.getDaysInMonth(year, month)
-        val start = DateUtils.getMonthStartMillis(year, month)
-        val end = DateUtils.getMonthEndMillis(year, month)
-        val monthTransactions = list.filter { it.timestamp in start..end }
 
-        val points = mutableListOf<DailyChartPoint>()
-        for (day in 1..daysInMonth) {
-            val dayTransactions = monthTransactions.filter { DateUtils.getDayOfMonth(it.timestamp) == day }
-            val inc = dayTransactions.filter { it.type == TransactionType.INCOME.name }.sumOf { it.amount }
-            val exp = dayTransactions.filter { it.type == TransactionType.EXPENSE.name }.sumOf { it.amount }
-            points.add(DailyChartPoint(day = day, dateLabel = "$day", income = inc, expense = exp))
+        var totalIncome = 0L
+        var totalExpense = 0L
+
+        val dayIncome = LongArray(daysInMonth + 1)
+        val dayExpense = LongArray(daysInMonth + 1)
+        val cal = Calendar.getInstance()
+
+        for (tx in list) {
+            val t = tx.timestamp
+            if (t in start..end) {
+                val isInc = tx.type == TransactionType.INCOME.name
+                val amt = tx.amount
+                if (isInc) totalIncome += amt else totalExpense += amt
+
+                cal.timeInMillis = t
+                val day = cal.get(Calendar.DAY_OF_MONTH)
+                if (day in 1..daysInMonth) {
+                    if (isInc) dayIncome[day] += amt else dayExpense[day] += amt
+                }
+            }
         }
-        points
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+        val points = ArrayList<DailyChartPoint>(daysInMonth)
+        for (day in 1..daysInMonth) {
+            points.add(DailyChartPoint(day, "$day", dayIncome[day], dayExpense[day]))
+        }
+
+        MonthlySummary(totalIncome, totalExpense, points)
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), MonthlySummary())
+
+    val selectedMonthIncome: StateFlow<Long> = monthlySummary.map { it.income }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
+    val selectedMonthExpense: StateFlow<Long> = monthlySummary.map { it.expense }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
+    val monthlyChartPoints: StateFlow<List<DailyChartPoint>> = monthlySummary.map { it.chartPoints }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // --- Modal / BottomSheet Add & Edit State ---
     private val _isAddEditOpen = MutableStateFlow(false)
@@ -286,11 +301,12 @@ class KifinViewModel(application: Application) : AndroidViewModel(application) {
             Triple(500000L, TransactionType.EXPENSE, "Tagihan Listrik")
         )
 
+        val seedList = ArrayList<TransactionEntity>(sampleEntries.size)
         sampleEntries.forEachIndexed { i, (amount, type, note) ->
             val offsetCal = Calendar.getInstance().apply {
                 add(Calendar.DAY_OF_MONTH, - (sampleEntries.size - 1 - i))
             }
-            repository.insert(
+            seedList.add(
                 TransactionEntity(
                     amount = amount,
                     type = type.name,
@@ -299,6 +315,7 @@ class KifinViewModel(application: Application) : AndroidViewModel(application) {
                 )
             )
         }
+        repository.insertAll(seedList)
     }
 
     fun selectTab(tab: AppTab) {

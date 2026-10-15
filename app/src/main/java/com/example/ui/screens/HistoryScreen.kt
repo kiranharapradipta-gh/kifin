@@ -432,7 +432,11 @@ fun HistoryScreen(
                     }
                 }
             } else {
-                items(displayedTransactions, key = { it.id }) { tx ->
+                items(
+                    items = displayedTransactions,
+                    key = { it.id },
+                    contentType = { "transaction_item" }
+                ) { tx ->
                     SwipeableTransactionCard(
                         transaction = tx,
                         onEdit = onEditTransaction,

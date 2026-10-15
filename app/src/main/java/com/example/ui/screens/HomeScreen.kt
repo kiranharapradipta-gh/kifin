@@ -421,7 +421,7 @@ fun HomeScreen(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Geser kartu: Kiri untuk Edit, Kanan untuk Hapus",
+                            text = "Ketuk untuk edit atau gunakan tombol aksi cepat",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -482,7 +482,11 @@ fun HomeScreen(
                     }
                 }
             } else {
-                items(recentTransactions, key = { it.id }) { tx ->
+                items(
+                    items = recentTransactions,
+                    key = { it.id },
+                    contentType = { "transaction_item" }
+                ) { tx ->
                     SwipeableTransactionCard(
                         transaction = tx,
                         onEdit = onEditTransaction,

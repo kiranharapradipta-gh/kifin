@@ -22,6 +22,10 @@ class TransactionRepository(private val dao: TransactionDao) {
         return dao.insertTransaction(transaction)
     }
 
+    suspend fun insertAll(transactions: List<TransactionEntity>): List<Long> {
+        return dao.insertAll(transactions)
+    }
+
     suspend fun update(transaction: TransactionEntity) {
         dao.updateTransaction(transaction)
     }
@@ -32,5 +36,9 @@ class TransactionRepository(private val dao: TransactionDao) {
 
     suspend fun deleteById(id: Long) {
         dao.deleteTransactionById(id)
+    }
+
+    suspend fun deleteAll() {
+        dao.deleteAll()
     }
 }

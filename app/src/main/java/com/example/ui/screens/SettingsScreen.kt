@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.TableChart
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -116,6 +117,7 @@ fun SettingsScreen(
     val coroutineScope = rememberCoroutineScope()
     var showSetPinDialog by remember { mutableStateOf(false) }
     var showGoogleLoginDialog by remember { mutableStateOf(false) }
+    var showRestoreConfirmDialog by remember { mutableStateOf(false) }
     var isDriveSyncing by remember { mutableStateOf(false) }
 
     // Real Google Play Services Sign-In Launcher
@@ -259,6 +261,21 @@ fun SettingsScreen(
                                 Text(
                                     text = "Login dengan Akun Google",
                                     fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            TextButton(
+                                onClick = { showGoogleLoginDialog = true },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("manual_google_login_button")
+                            ) {
+                                Text(
+                                    text = "Atau masukkan akun Google secara manual",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                             }
                         } else {
@@ -412,14 +429,7 @@ fun SettingsScreen(
 
                                     // Restore Button
                                     OutlinedButton(
-                                        onClick = {
-                                            isDriveSyncing = true
-                                            coroutineScope.launch {
-                                                val res = onRestoreFromDrive()
-                                                isDriveSyncing = false
-                                                Toast.makeText(context, res.message, Toast.LENGTH_LONG).show()
-                                            }
-                                        },
+                                        onClick = { showRestoreConfirmDialog = true },
                                         modifier = Modifier
                                             .weight(1f)
                                             .height(44.dp)
@@ -957,6 +967,40 @@ fun SettingsScreen(
                     Toast.makeText(context, "Berhasil masuk sebagai $name ($email)", Toast.LENGTH_SHORT).show()
                 },
                 onDismiss = { showGoogleLoginDialog = false }
+            )
+        }
+
+        // Restore Confirmation Dialog
+        if (showRestoreConfirmDialog) {
+            AlertDialog(
+                onDismissRequest = { showRestoreConfirmDialog = false },
+                shape = RoundedCornerShape(20.dp),
+                title = {
+                    Text("Pulihkan dari Google Drive?", fontWeight = FontWeight.Bold)
+                },
+                text = {
+                    Text("Seluruh riwayat transaksi dari cadangan Google Drive akan digabungkan ke pembukuan KIFIN Anda.")
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showRestoreConfirmDialog = false
+                            isDriveSyncing = true
+                            coroutineScope.launch {
+                                val res = onRestoreFromDrive()
+                                isDriveSyncing = false
+                                Toast.makeText(context, res.message, Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    ) {
+                        Text("Ya, Pulihkan")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showRestoreConfirmDialog = false }) {
+                        Text("Batal")
+                    }
+                }
             )
         }
     }

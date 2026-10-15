@@ -49,7 +49,6 @@ import com.example.ui.theme.IncomeGreen
 import com.example.util.CurrencyUtils
 import com.example.util.DateUtils
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SwipeableTransactionCard(
     transaction: TransactionEntity,
@@ -57,169 +56,100 @@ fun SwipeableTransactionCard(
     onDelete: (TransactionEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { dismissValue ->
-            when (dismissValue) {
-                SwipeToDismissBoxValue.StartToEnd -> {
-                    // Geser ke kanan: Hapus (memerlukan konfirmasi)
-                    onDelete(transaction)
-                    false // Don't dismiss right away, wait for user confirmation
-                }
-                SwipeToDismissBoxValue.EndToStart -> {
-                    // Geser ke kiri: Edit
-                    onEdit(transaction)
-                    false // Keep card in place after triggering edit
-                }
-                SwipeToDismissBoxValue.Settled -> false
-            }
-        }
-    )
+    val isIncome = transaction.type == TransactionType.INCOME.name
 
-    SwipeToDismissBox(
-        state = dismissState,
+    Card(
+        onClick = { onEdit(transaction) },
         modifier = modifier
             .fillMaxWidth()
             .testTag("swipeable_transaction_${transaction.id}"),
-        backgroundContent = {
-            val direction = dismissState.dismissDirection
-            val color by animateColorAsState(
-                targetValue = when (direction) {
-                    SwipeToDismissBoxValue.StartToEnd -> ExpenseRed // Kanan -> Hapus
-                    SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.primary // Kiri -> Edit
-                    else -> Color.Transparent
-                },
-                label = "swipe_bg"
-            )
-
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Type Icon Badge
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .background(color, RoundedCornerShape(16.dp))
-                    .padding(horizontal = 20.dp),
-                contentAlignment = if (direction == SwipeToDismissBoxValue.StartToEnd) Alignment.CenterStart else Alignment.CenterEnd
+                    .size(42.dp)
+                    .background(
+                        color = if (isIncome) IncomeGreen.copy(alpha = 0.15f) else ExpenseRed.copy(alpha = 0.15f),
+                        shape = CircleShape
+                    ),
+                contentAlignment = Alignment.Center
             ) {
-                if (direction == SwipeToDismissBoxValue.StartToEnd) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Hapus",
-                            tint = Color.White
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Hapus",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                } else if (direction == SwipeToDismissBoxValue.EndToStart) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "Edit",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
+                Icon(
+                    imageVector = if (isIncome) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                    contentDescription = null,
+                    tint = if (isIncome) IncomeGreen else ExpenseRed,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // Note & Date
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = transaction.note,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = DateUtils.formatDate(transaction.timestamp) + " • " + DateUtils.formatTime(transaction.timestamp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // Amount & Actions
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = (if (isIncome) "+" else "-") + CurrencyUtils.formatRupiah(transaction.amount),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isIncome) IncomeGreen else ExpenseRed
+                )
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                // Small indicator for quick action
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { onEdit(transaction) },
+                        modifier = Modifier
+                            .size(28.dp)
+                            .testTag("btn_edit_${transaction.id}")
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Edit,
                             contentDescription = "Edit",
-                            tint = Color.White
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            modifier = Modifier.size(15.dp)
                         )
                     }
-                }
-            }
-        }
-    ) {
-        val isIncome = transaction.type == TransactionType.INCOME.name
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.5.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Type Icon Badge
-                Box(
-                    modifier = Modifier
-                        .size(42.dp)
-                        .background(
-                            color = if (isIncome) IncomeGreen.copy(alpha = 0.15f) else ExpenseRed.copy(alpha = 0.15f),
-                            shape = CircleShape
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (isIncome) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
-                        contentDescription = null,
-                        tint = if (isIncome) IncomeGreen else ExpenseRed,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                // Note & Date
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = transaction.note,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = DateUtils.formatDate(transaction.timestamp) + " • " + DateUtils.formatTime(transaction.timestamp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                // Amount
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = (if (isIncome) "+" else "-") + CurrencyUtils.formatRupiah(transaction.amount),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isIncome) IncomeGreen else ExpenseRed
-                    )
-
-                    // Small indicator for quick action
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(
-                            onClick = { onEdit(transaction) },
-                            modifier = Modifier
-                                .size(28.dp)
-                                .testTag("btn_edit_${transaction.id}")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Edit,
-                                contentDescription = "Edit",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                modifier = Modifier.size(15.dp)
-                            )
-                        }
-                        IconButton(
-                            onClick = { onDelete(transaction) },
-                            modifier = Modifier
-                                .size(28.dp)
-                                .testTag("btn_delete_${transaction.id}")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "Hapus",
-                                tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
-                                modifier = Modifier.size(15.dp)
-                            )
-                        }
+                    IconButton(
+                        onClick = { onDelete(transaction) },
+                        modifier = Modifier
+                            .size(28.dp)
+                            .testTag("btn_delete_${transaction.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Hapus",
+                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                            modifier = Modifier.size(15.dp)
+                        )
                     }
                 }
             }

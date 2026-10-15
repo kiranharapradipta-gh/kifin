@@ -294,28 +294,32 @@ fun KifinMainApp(viewModel: KifinViewModel) {
             }
         }
 
-        // Add / Edit Transaction Modal BottomSheet
-        AddEditTransactionSheet(
-            isOpen = isAddEditOpen,
-            editingTransaction = editingTransaction,
-            transactionType = inputTransactionType,
-            amount = inputAmount,
-            note = inputNote,
-            noteSuggestions = noteSuggestions,
-            onTypeChange = { type -> viewModel.setInputType(type) },
-            onAddAmount = { delta -> viewModel.addToNominal(delta) },
-            onResetAmount = { viewModel.resetNominal() },
-            onSetAmount = { amt -> viewModel.setNominal(amt) },
-            onNoteChange = { n -> viewModel.setInputNote(n) },
-            onSave = { viewModel.saveTransaction() },
-            onDismiss = { viewModel.closeAddEditSheet() }
-        )
+        // Add / Edit Transaction Modal BottomSheet (only composed when open)
+        if (isAddEditOpen) {
+            AddEditTransactionSheet(
+                isOpen = true,
+                editingTransaction = editingTransaction,
+                transactionType = inputTransactionType,
+                amount = inputAmount,
+                note = inputNote,
+                noteSuggestions = noteSuggestions,
+                onTypeChange = { type -> viewModel.setInputType(type) },
+                onAddAmount = { delta -> viewModel.addToNominal(delta) },
+                onResetAmount = { viewModel.resetNominal() },
+                onSetAmount = { amt -> viewModel.setNominal(amt) },
+                onNoteChange = { n -> viewModel.setInputNote(n) },
+                onSave = { viewModel.saveTransaction() },
+                onDismiss = { viewModel.closeAddEditSheet() }
+            )
+        }
 
-        // Delete Confirmation Dialog
-        DeleteConfirmationDialog(
-            transaction = transactionToDelete,
-            onConfirm = { viewModel.executeDelete() },
-            onDismiss = { viewModel.dismissDeleteDialog() }
-        )
+        // Delete Confirmation Dialog (only composed when active)
+        if (transactionToDelete != null) {
+            DeleteConfirmationDialog(
+                transaction = transactionToDelete,
+                onConfirm = { viewModel.executeDelete() },
+                onDismiss = { viewModel.dismissDeleteDialog() }
+            )
+        }
     }
 }

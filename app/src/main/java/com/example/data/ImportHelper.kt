@@ -63,12 +63,9 @@ object ImportHelper {
                 return ImportResult(false, 0, "Tidak ditemukan data transaksi yang valid dalam berkas")
             }
 
-            // Save to database
-            var count = 0
-            for (tx in transactionsToInsert) {
-                repository.insert(tx)
-                count++
-            }
+            // Save to database with high-performance batch insert
+            repository.insertAll(transactionsToInsert)
+            val count = transactionsToInsert.size
 
             ImportResult(true, count, "Berhasil mengimpor $count transaksi ke dalam KIFIN")
         } catch (e: Exception) {
